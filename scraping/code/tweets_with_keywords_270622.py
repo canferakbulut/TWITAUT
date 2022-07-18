@@ -35,17 +35,17 @@ def get_random_time(start, end):
     rand_start = start + timedelta(seconds=rand_second)
     ## returns endtime: 24 hrs later
     rand_end= rand_start + timedelta(hours = 24)
-    return rand_start.strftime(dtformat), rand_end.strftime(dtformat)
-
+    return rand_start.strftime(dtformat), rand_end.strftime(dtformat) 
 
 def create_queries(number_of_dates, keywords, base_year, range_of_years,
                    max_results = 100,
+                   existing_start_times = [],
                    tweet_fields = ["id", "text", "author_id", "created_at"]):
     query = " OR ".join(keywords) + " -is:retweet lang:en"
     tweet_fields = ','.join(tweet_fields)
     list_of_dates = [datetime(base_year + years, 1, 1) for years in range(range_of_years)]
     qs = []
-    start_time_dump = []
+    start_time_dump = existing_start_times
     for date in list_of_dates:
         for i in range(number_of_dates):
             lower_date, upper_date = date, datetime(date.year + 1, 1, 1)
@@ -115,18 +115,21 @@ def main():
             if token_flag:
                 query['next_token'] = next_token[0]
             
-            success, json_response = connect_to_endpoint(query)
+            success = False
+            attempts = 0
+            while not success and attempts <= 2:
+                success, json_response = connect_to_endpoint(query)
+                attempts += 1
         
         #checks if 'data' field is empty; if not, appends to full results
         
             if success:
                 json_response_full.extend(json_response['data'])
                 token_flag, next_token = next_page(json_response)
-            else:
-                continue
                 
             if not token_flag:
                 pagination_flag = False
+       
                     
     return json_response_full
                 

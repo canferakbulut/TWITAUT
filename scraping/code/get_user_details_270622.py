@@ -22,16 +22,16 @@ consumer_secret = os.environ.get("CONSUMER_SECRET")
 def chunker(seq, size):
     return list(seq[pos:pos + size] for pos in range(0, len(seq), size))
 
-## pass in usernames as 
-def create_queries(ids,  
+## pass in usernames as users
+def create_queries(users,  
                    user_fields = ["username", "name", "id", "created_at", "description", "verified"]):
-    user_slices = chunker(ids, 100)
+    user_slices = chunker(users, 100)
     user_fields = ','.join(user_fields)
     qs = []
     for chunk in user_slices:
         string_chunk = [str(x) for x in chunk]
         query = ','.join(string_chunk)
-        q = {'ids': query, 'user.fields': user_fields}
+        q = {'usernames': query, 'user.fields': user_fields}
         qs.append(q)
     return qs
 
@@ -94,7 +94,7 @@ def make_request(queries, consumer_key, consumer_secret, access_token, access_to
     resource_owner_secret=access_token_secret,
     )
     try:
-        response = oauth.get("https://api.twitter.com/2/users", params=queries)
+        response = oauth.get("https://api.twitter.com/2/users/by", params=queries)
     except (MaxRetryError, gaierror, ConnectionError, NewConnectionError) as error: 
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(error).__name__, error.args)
@@ -119,7 +119,7 @@ def make_request(queries, consumer_key, consumer_secret, access_token, access_to
             return False, response.json()
         
 def main():
-    queries = create_queries(ids)
+    queries = create_queries(users)
     resource_owner_key, resource_owner_secret, oauth = get_request_token(consumer_key, consumer_secret)
     verifier = get_authorization(oauth)
     access_token, access_token_secret = get_access_token(consumer_key, consumer_secret, 
@@ -127,9 +127,9 @@ def main():
                                                          verifier)
     json_response_full = []
     for query in queries:
-        success, response = make_request(query, consumer_key, consumer_secret, access_token, 
-                                         access_token_secret)
+        
         attempts = 0
+        success = False
         while not success and attempts <= 3:
             success, response = make_request(query, consumer_key, consumer_secret, access_token, 
                                              access_token_secret)
@@ -143,10 +143,7 @@ def main():
     return json_response_full
         
 if __name__ == "__main__":
-    df = pd.read_csv("tweets_2015-2022.csv", usecols = ["author_id"],
-                     lineterminator = "\n")
-    ids = df['author_id'].to_list()
-    json_response_full = main()
+    main()
 
 
         
