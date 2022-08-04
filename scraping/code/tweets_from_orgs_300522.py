@@ -8,6 +8,7 @@ Created on Mon May 30 15:38:37 2022
 import requests
 import os
 import json
+import pandas as pd
 from time import sleep
 
 # To set your environment variables in your terminal run the following line:
@@ -25,7 +26,7 @@ def create_queries(ids, start_time,
     tweet_fields = ','.join(tweet_fields)
     qs = []
     for author_id, date in zip(author_ids, start_time):
-        q = {'query': author_id, 'start_time': start_time, 
+        q = {'query': author_id, 'start_time': date, 
              'tweet.fields': tweet_fields, 'max_results': 100}
         qs.append(q)
     return qs
@@ -87,15 +88,25 @@ def main():
             if token_flag:
                 query['next_token'] = next_token[0]
            
-            success, json_response = connect_to_endpoint(query)
+            attempts = 0
+            success = False
+            
+            while not success and attempts <= 3:
+                success, json_response = connect_to_endpoint(query)
+                attempts += 1
        
        #checks if 'data' field is empty; if not, appends to full results
        
             if success:
-                json_response_full.extend(json_response['data'])
-                token_flag, next_token = next_page(json_response)
+                try: 
+                    json_response_full.extend(json_response['data'])
+                except KeyError:
+                    pass
+                finally:
+                    token_flag, next_token = next_page(json_response)
+
             else:
-                continue
+                token_flag = False
                
             if not token_flag:
                 pagination_flag = False
@@ -104,10 +115,11 @@ def main():
                 
                 
 if __name__ == "__main__":
-    ids = ["diagnoseses"]
-    start_time = "2022-04-27T00:00:00Z"
-    query = create_queries(ids, start_time)
-    response = connect_to_endpoint(query)
+    df = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/ac_user_descriptions_220712.csv")
+    ids = df['username'].to_list()
+    start_time = df['created_at'].to_list()
+    json_response_full = main()
+    
     
 
         
