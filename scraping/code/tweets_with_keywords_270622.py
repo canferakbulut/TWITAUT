@@ -124,8 +124,15 @@ def main():
         #checks if 'data' field is empty; if not, appends to full results
         
             if success:
-                json_response_full.extend(json_response['data'])
-                token_flag, next_token = next_page(json_response)
+                try: 
+                    json_response_full.extend(json_response['data'])
+                except KeyError:
+                    pass
+                finally:
+                    token_flag, next_token = next_page(json_response)
+
+            else:
+                token_flag = False
                 
             if not token_flag:
                 pagination_flag = False
