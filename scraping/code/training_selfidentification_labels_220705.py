@@ -9,20 +9,25 @@ import pandas as pd
 import numpy as np
 import random
 import re
+import gensim
 from string import punctuation, printable
 from nltk.stem import WordNetLemmatizer 
+from nltk.corpus import stopwords
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.metrics import cohen_kappa_score, classification_report
+from sklearn.metrics import cohen_kappa_score
 from imblearn.pipeline import Pipeline, make_pipeline
 from imblearn.over_sampling import SMOTE
-from sklearn.model_selection import train_test_split as tts
+from sklearn.model_selection import train_test_split as tts, GridSearchCV
 from imblearn.under_sampling import RandomUnderSampler
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.svm import LinearSVC
-import gensim
-import gensim.downloader as gensim_api
+from sklearn.base import BaseEstimator, TransformerMixin
+from Doc2VecTransformer import Doc2VecTransformer
+from tqdm import tqdm
+import time
 
 #splitting corpus of user descriptions into two datasets
 def samples_to_annotate(df, nsample = 30000, noverlap = 1000, seed = 42):
@@ -63,13 +68,16 @@ def intercoder_reliability(df1, df2):
     return kappa, overlap
 
 def description_cleaning(text):
+    stops = stopwords.words("english")
     text = str(text)
     #remove url links
-    text = re.sub(r'http\S+', '', text)
+    text = re.sub(r'http\S+', ' ', text)
     #remove @ words
-    text = re.sub(r'@\w+', '', text)
+    text = re.sub(r'@\w+', ' ', text)
+    #remove stopwords
+    text = ' '.join([word for word in text.split() if word not in stops])
     #remove punct
-    text = text.translate(str.maketrans('', '', punctuation))
+    text = text.translate(str.maketrans({char:' ' for char in punctuation}))
     #remove non-ascii characters
     text = ''.join(filter(lambda x: x in printable, text))
     #lemmatize words
@@ -78,54 +86,124 @@ def description_cleaning(text):
     text = text.lower()
     return text
 
+def clean_dfs(path1, path2):
+    cols = ['description', 'id', 'verified', 'username', 'name', 'label']
+    df1, df2 = pd.read_csv(path1, usecols=cols), pd.read_csv(path2, usecols=cols)
+    df = pd.concat([df1, df2])
+    df.drop_duplicates(inplace=True, subset = ['id'])
+    df['description'] = df['description'].map(description_cleaning)
+    return df, intercoder_reliability(df1, df2)
 
+def get_tts(df):
+    data = df[['description', 'label']].values
+    X, y = data[:, 0], data[:, -1].astype('int')
+    # label encode the target variable
+    X_train, X_test, y_train, y_test = tts(X, y, stratify=y, random_state=0, test_size=0.33)
+    return X_train, X_test, y_train, y_test
+    
 #passable into 'model_type': lg (logistic regression), mnb (multinomial),
 # lsvm (linear support vector machine), rf (random forest)
-def text_classifier(model_type):
-
+def text_classifier(encoding_type, model_type):
+    
     models = {
         'rf': RandomForestClassifier(n_estimators=200, max_depth=10, random_state=0),
         'lsvm': LinearSVC(),
         'mnb': MultinomialNB(),
-        'lg': LogisticRegression(random_state=0)
+        'lg': LogisticRegression(max_iter=10000)
     }
     
-    textclassifier = Pipeline([
-        ('vect', CountVectorizer()),
-        ('tfidf', TfidfTransformer()),
-        ('oversample', SMOTE(sampling_strategy = {1:400, 2:200})),
-        ('undersample', RandomUnderSampler(sampling_strategy = {0:300})),
-        (model_type, models[model_type])])
+    if encoding_type == 'tfidf':
+        textclassifier = Pipeline([
+            ('vect', CountVectorizer()), 
+            ('tfidf', TfidfTransformer()),
+            ('oversample', SMOTE()),
+            ('undersample', RandomUnderSampler()),
+            (model_type, models[model_type])])
+        
+    elif encoding_type == 'doc2vec':
+        textclassifier = Pipeline([
+            ('doc2vec', Doc2VecTransformer()),
+            ('oversample', SMOTE()),
+            ('undersample', RandomUnderSampler()),
+            ('normalizing',MinMaxScaler()),
+            (model_type, models[model_type])])
     
+    else:
+        raise Exception("invalid encoding type!")
+           
     return textclassifier
- 
-def evaluate_model(textclassifier, df):
-    data = df[['description', 'label']].values
-    # split into input and output elements
-    X, y = data[:, 0], data[:, -1].astype('int')
-    # label encode the target variable
-    X_train, X_test, y_train, y_test = tts(X, y, stratify=y, random_state=0)
-    textclassifier.fit(X_train, y_train) 
-    y_hat = textclassifier.predict(X_test)
-    return classification_report(y_test, y_hat)
+
+    
+def tune_hyperparameters(encoding_type, X_train, y_train):
+    
+    majority_count = np.bincount(y_train)[0]
+    
+    models = ['rf', 'lsvm', 'mnb', 'lg']
+    
+    cv_results = {encoding_type + '_' + model: {} for model in models}
+    
+    param_grid = {
+        #20, 30, and 40 percent of majority class
+        'oversample__sampling_strategy':[{1:round(majority_count * x), 2:round(majority_count * x)}
+                                         for x in [0.3, 0.4, 0.5]],
+        #undersample by 40, 60, and 80 percent
+        'undersample__sampling_strategy':[{0:round(majority_count * x)} for x in [0.4, 0.6, 0.8]]
+        }
+    
+    
+    if encoding_type == "doc2vec":
+        param_grid = {
+            "doc2vec__vector_size": [30, 50],
+            "doc2vec__epochs": [50], 
+            "doc2vec__window": [3, 6, 8],
+            "doc2vec__min_count": [10],
+            "doc2vec__dm": [0, 1]
+            } | param_grid
+    
+    for model in tqdm(models):
+        name = encoding_type + '_' + model
+        print("starting " + name)
+        textclassifier = text_classifier(encoding_type, model)
+        search = GridSearchCV(textclassifier, param_grid, verbose = 2)
+        search.fit(X_train, y_train)
+        cv_results[name]['parameters'] = search.best_params_
+        cv_results[name]['scores'] = search.best_score_
+        print("done with" + name)
+    
+    return cv_results
+
+def evaluate_model(X_train, y_train, X_test, y_test, hyperparams_dict):
+    keys = list(hyperparams_dict.keys())
+    classification_reports = {key: {} for key in keys}
+    for key in keys:
+        embedding_type, model_type = key.split("_")
+        textclassifier = text_classifier(embedding_type, model_type)
+        textclassifier.set_params(**hyperparams_dict[key]['parameters'])
+        textclassifier.fit(X_train, y_train)
+        y_hat = textclassifier.predict(X_test)
+        classification_reports[key] = classification_report(y_test, y_hat, output_dict=True)
+        
+    return classification_reports 
 
 def main():
-    pass
-
+    df, intercoder_rel = clean_dfs(path1, path2)
+    X_train, X_test, y_train, y_test = get_tts(df)
+    embeddings = ["tfidf", "doc2vec"]
+    best_hyperparams = {embedding: {} for embedding in embeddings}
+    model_evals = {}
+    for embedding in embeddings:
+        best_hyperparams[embedding] = tune_hyperparameters(embedding, X_train, y_train)
+        model_evals.update(evaluate_model(X_train, y_train, X_test, y_test, best_hyperparams[embedding]))
+    
+    return intercoder_rel, best_hyperparams, model_evals
 
 if __name__ == "__main__":
-    df1 = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TWITAUT_Annotation_Spreadsheet.csv")   
-    df1 = df1.rename(columns = {'label (0 = NA, 1 = autistic, 2 = parent of autistic child)': 'label'})
-    df2 = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/annotation_CA.csv")
-    df2 = df2.rename(columns = {'scoring': 'label'})
-    cols = ['description', 'id', 'verified', 'username', 'name', 'label']
-    df1, df2 = df1[cols], df2[cols]
-    print(intercoder_reliability(df1, df2))
-    df = pd.concat([df1, df2])
-    df.drop_duplicates(inplace=True, subset = ['id'])
-    df['description'] = df['description'].map(description_cleaning)
-    textclassifier = text_classifier('lsvm')
-    print(evaluate_model(textclassifier, df))
+    path1 = "/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TWITAUT_Annotation_Spreadsheet.csv"   
+    path2 = "/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/annotation_CA.csv"
+    intercoder_rel, best_hyperparams, model_evals = main()
+
+  
+    
     
     
 
