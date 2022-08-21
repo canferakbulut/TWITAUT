@@ -12,6 +12,7 @@ from time import sleep
 from datetime import datetime, timedelta
 from random import randrange
 import pandas as pd
+from math import ceil
 
 
 # To set your environment variables in your terminal run the following line:
@@ -35,20 +36,33 @@ def get_random_time(start, end):
     rand_start = start + timedelta(seconds=rand_second)
     ## returns endtime: 24 hrs later
     rand_end= rand_start + timedelta(hours = 24)
-    return rand_start.strftime(dtformat), rand_end.strftime(dtformat) 
+    return rand_start.strftime(dtformat), rand_end.strftime(dtformat)
 
-def create_queries(number_of_dates, keywords, base_year, range_of_years,
-                   max_results = 100,
+def existing_start_times(created_at):
+    created_at = created_at if isinstance(created_at, list) else [created_at]
+    dtformat = '%Y-%m-%dT%H:%M:%S.000Z'
+    start_times = []
+    for date in created_at:
+        year = datetime.strptime(date, dtformat).year
+        start_times.append(datetime(year, 1, 1))
+    return start_times
+
+def create_queries(sample_per_year, keywords, base_year,
                    existing_start_times = [],
+                   max_results = 100,
                    tweet_fields = ["id", "text", "author_id", "created_at"]):
     query = " OR ".join(keywords) + " -is:retweet lang:en"
     tweet_fields = ','.join(tweet_fields)
-    list_of_dates = [datetime(base_year + years, 1, 1) for years in range(range_of_years)]
+    current_year = datetime.now().year 
+    list_of_dates = [datetime(base_year + years, 1, 1) for years in range(current_year - base_year + 1)]
     qs = []
     start_time_dump = existing_start_times
     for date in list_of_dates:
-        for i in range(number_of_dates):
-            lower_date, upper_date = date, datetime(date.year + 1, 1, 1)
+        for i in range(sample_per_year):
+            if date.year != current_year:
+                lower_date, upper_date = date, datetime(date.year + 1, 1, 1)
+            else:
+                lower_date, upper_date = date, datetime.now()
             start_time, end_time = get_random_time(lower_date, upper_date)
             while start_time in start_time_dump:
                 start_time, end_time = get_random_time(lower_date, upper_date)
@@ -68,7 +82,7 @@ def connect_to_endpoint(params):
     search_url = "https://api.twitter.com/2/tweets/search/all"
     try:
         response = requests.request("GET", search_url, auth=bearer_oauth, params=params)
-    except (MaxRetryError, gaierror, ConnectionError, NewConnectionError) as error: 
+    except Exception as error: 
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(error).__name__, error.args)
         print(message)
@@ -78,15 +92,16 @@ def connect_to_endpoint(params):
         if response.status_code == 200:
             return True, response.json()
         elif response.status_code == 429:
-            print("Too many requests: waiting 15 minutes...")
-            sleep(900)
+            wait = ceil(float(response.headers['x-rate-limit-reset']) - time.time())
+            print("Too many requests: waiting {minute} minutes...".format(minute = ceil(wait/60)))
+            sleep(wait)
             return False, response.json()
         elif response.status_code in (401, 403, 404):
             print("Page not found, skipping...")
             return False, response.json()
         elif response.status_code in (500, 502, 503, 504):
-            print("Servers down... waiting 10 minutes.")
-            sleep(600)
+            print("Servers down... waiting 1 minute.")
+            sleep(60)
             return False, response.json()
         else:
             return False, response.json()
@@ -105,7 +120,10 @@ def next_page(json_response):
     
 
 def main():
-    queries = create_queries(number_of_dates, keywords, lower_date, upper_date)
+    keywords = get_keywords(path)
+    old_start = existing_start_times(created_at)
+    queries = create_queries(sample_per_year, keywords, base_year,
+                             old_start)
     json_response_full = []
     for query in queries:
         pagination_flag = True
@@ -142,5 +160,11 @@ def main():
                 
                 
 if __name__ == "__main__":
-    main()
+    path = "/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/autism_keywords.txt"
+    df = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TweetsSoFar_220816.csv", 
+                            lineterminator = "\n")
+    created_at = df["created_at"].to_list()
+    sample_per_year = 5
+    base_year = 2009
+    json_response_full = main()
     

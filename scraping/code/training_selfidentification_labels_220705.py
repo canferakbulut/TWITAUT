@@ -9,12 +9,12 @@ import pandas as pd
 import numpy as np
 import random
 import re
-import gensim
-from string import punctuation, printable
+from string import punctuation, printable, digits
 from nltk.stem import WordNetLemmatizer 
 from nltk.corpus import stopwords
+from nltk import bigrams
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
-from sklearn.metrics import cohen_kappa_score
+from sklearn.metrics import cohen_kappa_score, classification_report
 from imblearn.pipeline import Pipeline, make_pipeline
 from imblearn.over_sampling import SMOTE
 from sklearn.model_selection import train_test_split as tts, GridSearchCV
@@ -24,9 +24,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.svm import LinearSVC
-from sklearn.base import BaseEstimator, TransformerMixin
 from Doc2VecTransformer import Doc2VecTransformer
+from sklearn.feature_selection import chi2
+from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm import tqdm
+from scipy import sparse
 import time
 
 #splitting corpus of user descriptions into two datasets
@@ -54,8 +56,6 @@ def percent_overlap(array1, array2):
     return sum(agree)/len(agree)
 
 def intercoder_reliability(df1, df2):
-    df1.drop_duplicates(inplace=True, subset = ['id'])
-    df2.drop_duplicates(inplace=True, subset = ['id'])
     id1, id2 = set(remove_na(df1['id'])), set(remove_na(df2['id']))
     match_ids = [int(float(x)) for x in list(set.intersection(id1, id2))]
     labels1, labels2 = [], []
@@ -78,6 +78,8 @@ def description_cleaning(text):
     text = ' '.join([word for word in text.split() if word not in stops])
     #remove punct
     text = text.translate(str.maketrans({char:' ' for char in punctuation}))
+    #remove numbers
+    text = text.translate(str.maketrans({char:' ' for char in digits}))
     #remove non-ascii characters
     text = ''.join(filter(lambda x: x in printable, text))
     #lemmatize words
@@ -92,15 +94,17 @@ def clean_dfs(path1, path2):
     df = pd.concat([df1, df2])
     df.drop_duplicates(inplace=True, subset = ['id'])
     df['description'] = df['description'].map(description_cleaning)
+    #remove NA descriptions
+    df = df.loc[~(df['description'].replace(" ", "") == 'nan')]
     return df, intercoder_reliability(df1, df2)
 
-def get_tts(df):
-    data = df[['description', 'label']].values
+def get_tts(df, pred = 'description', target = 'label'):
+    data = df[[pred, target]].values
     X, y = data[:, 0], data[:, -1].astype('int')
     # label encode the target variable
     X_train, X_test, y_train, y_test = tts(X, y, stratify=y, random_state=0, test_size=0.33)
     return X_train, X_test, y_train, y_test
-    
+   
 #passable into 'model_type': lg (logistic regression), mnb (multinomial),
 # lsvm (linear support vector machine), rf (random forest)
 def text_classifier(encoding_type, model_type):
@@ -145,7 +149,7 @@ def tune_hyperparameters(encoding_type, X_train, y_train):
     param_grid = {
         #20, 30, and 40 percent of majority class
         'oversample__sampling_strategy':[{1:round(majority_count * x), 2:round(majority_count * x)}
-                                         for x in [0.3, 0.4, 0.5]],
+                                         for x in [0.4, 0.5, 0.6]],
         #undersample by 40, 60, and 80 percent
         'undersample__sampling_strategy':[{0:round(majority_count * x)} for x in [0.4, 0.6, 0.8]]
         }

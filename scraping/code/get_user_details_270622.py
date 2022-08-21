@@ -11,6 +11,7 @@ import os
 import json
 from time import sleep
 import pandas as pd
+from math import ceil
 
 consumer_key = os.environ.get("CONSUMER_KEY")
 consumer_secret = os.environ.get("CONSUMER_SECRET")
@@ -94,8 +95,8 @@ def make_request(queries, consumer_key, consumer_secret, access_token, access_to
     resource_owner_secret=access_token_secret,
     )
     try:
-        response = oauth.get("https://api.twitter.com/2/users/by", params=queries)
-    except (MaxRetryError, gaierror, ConnectionError, NewConnectionError) as error: 
+        response = oauth.get("https://api.twitter.com/2/users", params=queries)
+    except Exception as error: 
         template = "An exception of type {0} occurred. Arguments:\n{1!r}"
         message = template.format(type(error).__name__, error.args)
         print(message)
@@ -105,8 +106,9 @@ def make_request(queries, consumer_key, consumer_secret, access_token, access_to
         if response.status_code == 200:
             return True, response.json()
         elif response.status_code == 429:
-            print("Too many requests: waiting 15 minutes...")
-            sleep(900)
+            wait = ceil(float(response.headers['x-rate-limit-reset']) - time.time())
+            print("Too many requests: waiting {minute} minutes...".format(minute = ceil(wait/60)))
+            sleep(wait)
             return False, response.json()
         elif response.status_code in (401, 403, 404):
             print("Page not found, skipping...")
@@ -136,14 +138,26 @@ def main():
             attempts += 1
         
         if success:
-            json_response_full.extend(response['data'])
-        else:
-            continue
+            try: 
+                json_response_full.extend(json_response['data'])
+            except KeyError:
+                pass
+            finally:
+                token_flag, next_token = next_page(json_response)
 
+        else:
+            token_flag = False
+            
+        if not token_flag:
+            pagination_flag = False
+            
     return json_response_full
         
 if __name__ == "__main__":
-    main()
+   user_df = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TweetsSoFar_220816.csv",
+                       lineterminator = "\n")
+   users = user_df.id.to_list()
+   json_response_full = main()
 
 
         

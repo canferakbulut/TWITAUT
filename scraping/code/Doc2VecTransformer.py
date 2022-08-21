@@ -8,6 +8,7 @@ Created on Sun Aug  7 12:22:30 2022
 
 #credit to: @avisheknag17
 
+from sklearn.base import BaseEstimator
 from gensim.models.doc2vec import TaggedDocument, Doc2Vec
 from gensim.parsing.preprocessing import preprocess_string
 from sklearn.base import BaseEstimator
