@@ -32,7 +32,7 @@ def create_queries(users,
     for chunk in user_slices:
         string_chunk = [str(x) for x in chunk]
         query = ','.join(string_chunk)
-        q = {'usernames': query, 'user.fields': user_fields}
+        q = {'ids': query, 'user.fields': user_fields}
         qs.append(q)
     return qs
 
@@ -139,23 +139,15 @@ def main():
         
         if success:
             try: 
-                json_response_full.extend(json_response['data'])
+                json_response_full.extend(response['data'])
             except KeyError:
                 pass
-            finally:
-                token_flag, next_token = next_page(json_response)
-
-        else:
-            token_flag = False
-            
-        if not token_flag:
-            pagination_flag = False
             
     return json_response_full
         
 if __name__ == "__main__":
    user_df = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TweetsSoFar_220816.csv",
-                       lineterminator = "\n")
+                       lineterminator = "\n", dtype = {'id':'int'}, usecols = ['id'])
    users = user_df.id.to_list()
    json_response_full = main()
 
