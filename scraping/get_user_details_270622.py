@@ -9,9 +9,11 @@ Created on Mon Jun 27 18:52:23 2022
 from requests_oauthlib import OAuth1Session
 import os
 import json
-from time import sleep
+from time import sleep, time
 import pandas as pd
+import numpy as np
 from math import ceil
+from tqdm import tqdm
 
 consumer_key = os.environ.get("CONSUMER_KEY")
 consumer_secret = os.environ.get("CONSUMER_SECRET")
@@ -102,11 +104,12 @@ def make_request(queries, consumer_key, consumer_secret, access_token, access_to
         print(message)
         return False, []
     else:
-        print(response.status_code)
+        if response.status_code != 200:
+            print(response.status_code)
         if response.status_code == 200:
             return True, response.json()
         elif response.status_code == 429:
-            wait = ceil(float(response.headers['x-rate-limit-reset']) - time.time())
+            wait = ceil(float(response.headers['x-rate-limit-reset']) - time())
             print("Too many requests: waiting {minute} minutes...".format(minute = ceil(wait/60)))
             sleep(wait)
             return False, response.json()
@@ -128,7 +131,7 @@ def main():
                                                          resource_owner_key, resource_owner_secret,
                                                          verifier)
     json_response_full = []
-    for query in queries:
+    for query in tqdm(queries):
         
         attempts = 0
         success = False
@@ -141,14 +144,15 @@ def main():
             try: 
                 json_response_full.extend(response['data'])
             except KeyError:
-                pass
-            
+                print("Experiencing a key error! Moving on...")
+    
+    os.system('say "your code is done running!"')
     return json_response_full
         
 if __name__ == "__main__":
    user_df = pd.read_csv("/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TweetsSoFar_220816.csv",
-                       lineterminator = "\n", dtype = {'id':'int'}, usecols = ['id'])
-   users = user_df.id.to_list()
+                       lineterminator = "\n", dtype = {'author_id':'int'}, usecols = ['author_id'])
+   users = user_df.author_id.to_list()
    json_response_full = main()
 
 

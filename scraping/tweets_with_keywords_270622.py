@@ -8,7 +8,7 @@ Created on Mon Jun 27 16:39:43 2022
 import requests
 import os
 import json
-from time import sleep
+from time import sleep, time
 from datetime import datetime, timedelta
 from random import randrange
 import pandas as pd
@@ -92,7 +92,7 @@ def connect_to_endpoint(params):
         if response.status_code == 200:
             return True, response.json()
         elif response.status_code == 429:
-            wait = ceil(float(response.headers['x-rate-limit-reset']) - time.time())
+            wait = ceil(float(response.headers['x-rate-limit-reset']) - time())
             print("Too many requests: waiting {minute} minutes...".format(minute = ceil(wait/60)))
             sleep(wait)
             return False, response.json()

@@ -90,7 +90,7 @@ def description_cleaning(text):
 
 def clean_dfs(path1, path2):
     cols = ['description', 'id', 'verified', 'username', 'name', 'label']
-    df1, df2 = pd.read_csv(path1, usecols=cols), pd.read_csv(path2, usecols=cols)
+    df1, df2 = pd.read_csv(path1, usecols=cols), pd.read_csv(path2, usecols=cols, nrows = 4189)
     df = pd.concat([df1, df2])
     df.drop_duplicates(inplace=True, subset = ['id'])
     df['description'] = df['description'].map(description_cleaning)
@@ -203,7 +203,7 @@ def main():
 
 if __name__ == "__main__":
     path1 = "/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TWITAUT_Annotation_Spreadsheet.csv"   
-    path2 = "/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/annotation_CA.csv"
+    path2 = "/Users/canferakbulut/Documents/GitHub/TWITAUT/scraping/data/TWITAUT_Annotation_Spreadsheet - new_df_annotation.csv"
     intercoder_rel, best_hyperparams, model_evals = main()
 
   
