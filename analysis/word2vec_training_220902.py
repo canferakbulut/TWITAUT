@@ -14,7 +14,9 @@ from string import punctuation, printable, digits
 from nltk.stem import WordNetLemmatizer 
 from nltk.corpus import stopwords
 from scipy.spatial.distance import cosine
+from gensim.utils import RULE_DISCARD, RULE_KEEP
 from tqdm import tqdm
+import glob
 
 def csv(path):
     df = pd.read_csv(path, lineterminator = "\n", usecols = ['text'])
@@ -54,13 +56,13 @@ def cleaning(text):
     return text
 
 def tweet_cleaning(tweets):
-    tweets = [[cleaning(tweet)] for tweet in tweets]
+    tweets = [cleaning(tweet) for tweet in tweets]
     return tweets
 
 def make_params():
     raw_params = [[100, 300, 500], #vector_size
         [5, 8], # window
-        [10, 30], # min_count
+        [30, 50], # min_count
         [0, 1], #training algorithm: skipgram vs cbow
         [0, 1] #output layer: softmax vs negative sampling
         ]
@@ -102,7 +104,7 @@ def train_baselines(params, baseline_tweets, save = True):
             raise ValueError("uh oh! unexpected param length in word2vec initialization")
         
         model.build_vocab(baseline_tweets)
-        model.train(baseline_tweets, epochs = model.epochs, total_examples = len(baseline_tweets))
+        model.train(baseline_tweets, epochs = model.epochs, total_examples = model.corpus_count)
         model_dic[name] = model
         
         if save:
@@ -111,20 +113,38 @@ def train_baselines(params, baseline_tweets, save = True):
         print("finished with {} model training".format(name))
             
     return model_dic
-        
+
+def trim(word, count, min_count):
+    if count < (10 * min_count):
+        return RULE_DISCARD
+    else:
+        return RULE_KEEP
     
-def update_training(full_corpus, model_dic):
-    updates = {x: {y: None for y in full_corpus.keys()} for x in model_dic.keys()}
-    for model_name in model_dic:
-        for corpus_name in full_corpus:
-            corpus = full_corpus[corpus_name]
-            tweets = tweet_cleaning(corpus)
-            model = model_dic[model_name]
-            model.train(tweets, epochs = model.epochs, total_examples = len(tweets))
+#can pass in model_dic or list of model names 
+#if model names already have .model extension, i.e. if read in through listdir or glob
+#set extension = False
+def update_training(full_corpus, model_dic, extension = True):
+    print("start of cleaning")
+    clean_corpus = {x: tweet_cleaning(full_corpus[x]) for x in full_corpus}
+    print("finished cleaning!")
+    updates = {x: {y: None for y in clean_corpus} for x in model_dic}
+    
+    if extension:
+        model_names = [x + ".model" for x in model_dic]
+    else:
+        model_names = [x for x in model_dic]
+        
+    for model_name in tqdm(model_names):
+        for corpus_name in clean_corpus:
+            corpus = clean_corpus[corpus_name]
+            model = Word2Vec.load(model_name)
+            model.build_vocab(corpus, update = True, trim_rule = trim)
+            model.train(corpus, epochs = model.epochs, total_examples = len(corpus))
             updates[model_name][corpus_name] = model.wv
     return updates
 
 def from_name(pattern, name):
+    name = re.sub(".model", "", name)
     return int(re.search(pattern, name).group(1))
 
 def cosine_similarity_df(updates):
@@ -142,7 +162,9 @@ def cosine_similarity_df(updates):
         for word in words_in_common:
             for org in orgs:
                 for indv in indvs:
-                    result_dic = {param_name: from_name(pattern,model_name) for (param_name,pattern) in zip(param_names,patterns)}
+                    result_dic = {param_name: from_name(pattern,model_name) for (param_name,pattern) 
+                                  in zip(param_names,patterns)} | {'specification': model_name}
+                    
                     result_dic['word'] = word
                     result_dic['org'] = org
                     result_dic['indv'] = indv
@@ -156,8 +178,8 @@ def main():
     print(1)
     params = make_params()
     print(2)
-    model_dic = train_baselines(params, baseline_tweets, save = True)
-    print(3)
+    model_dic = train_baselines(params, baseline_tweets)
+    print(3)    
     updates = update_training(corpus_dic, model_dic)
     print(4)
     cos_sim_df = cosine_similarity_df(updates)
@@ -171,7 +193,11 @@ if __name__ == "__main__":
              'ac': 'ac_tweets_220730.csv',
              'asag': 'asag_tweets_220730.csv',
              'baseline': 'final_baseline_corp.csv'}
-    cos_sim_df = main()
+    corpus_dic, baseline_tweets = read_corpora(root, files)
+    model_dic = glob.glob("*.model")
+    updates = update_training(corpus_dic, model_dic, extension = False)
+    cos_sim_df = cosine_similarity_df(updates)
+    #cos_sim_df = main()
     
     
     
