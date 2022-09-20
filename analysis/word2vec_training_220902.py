@@ -17,6 +17,7 @@ from scipy.spatial.distance import cosine
 from gensim.utils import RULE_DISCARD, RULE_KEEP
 from tqdm import tqdm
 import glob
+import os
 
 def csv(path):
     df = pd.read_csv(path, lineterminator = "\n", usecols = ['text'])
@@ -32,8 +33,7 @@ def read_corpora(root, files): #takes input of: root directory (str), files (dic
     return corpus_dict, baseline_tweets
                                                                     
 
-def cleaning(text):
-    stops = stopwords.words("english")
+def cleaning(text, stops = stopwords.words("english")):
     text = str(text)
     #remove url links
     text = re.sub(r'http\S+', ' ', text)
@@ -114,11 +114,6 @@ def train_baselines(params, baseline_tweets, save = True):
             
     return model_dic
 
-def trim(word, count, min_count):
-    if count < (10 * min_count):
-        return RULE_DISCARD
-    else:
-        return RULE_KEEP
     
 #can pass in model_dic or list of model names 
 #if model names already have .model extension, i.e. if read in through listdir or glob
@@ -138,7 +133,7 @@ def update_training(full_corpus, model_dic, extension = True):
         for corpus_name in clean_corpus:
             corpus = clean_corpus[corpus_name]
             model = Word2Vec.load(model_name)
-            model.build_vocab(corpus, update = True, trim_rule = trim)
+            model.build_vocab(corpus, update = True)
             model.train(corpus, epochs = model.epochs, total_examples = len(corpus))
             updates[model_name][corpus_name] = model.wv
     return updates
@@ -194,11 +189,15 @@ if __name__ == "__main__":
              'asag': 'asag_tweets_220730.csv',
              'baseline': 'final_baseline_corp.csv'}
     corpus_dic, baseline_tweets = read_corpora(root, files)
+    os.chdir("/Users/canferakbulut/Documents/GitHub/TWITAUT/analysis/models")
     model_dic = glob.glob("*.model")
     updates = update_training(corpus_dic, model_dic, extension = False)
     cos_sim_df = cosine_similarity_df(updates)
     #cos_sim_df = main()
-    
+  
+z = []
+for x in corpus_dic.keys():
+    z.append(sample(corpus_dic[x],1))
     
     
     

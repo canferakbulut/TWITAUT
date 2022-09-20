@@ -12,7 +12,6 @@ import re
 from string import punctuation, printable, digits
 from nltk.stem import WordNetLemmatizer 
 from nltk.corpus import stopwords
-from nltk import bigrams
 from sklearn.feature_extraction.text import CountVectorizer, TfidfTransformer
 from sklearn.metrics import cohen_kappa_score, classification_report
 from imblearn.pipeline import Pipeline, make_pipeline
@@ -25,10 +24,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.svm import LinearSVC
 from Doc2VecTransformer import Doc2VecTransformer
-from sklearn.feature_selection import chi2
-from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm import tqdm
-from scipy import sparse
 import time
 
 #splitting corpus of user descriptions into two datasets

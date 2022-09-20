@@ -5,10 +5,18 @@ Created on Fri Aug 19 20:18:29 2022
 
 @author: canferakbulut
 """
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from imblearn.pipeline import Pipeline, make_pipeline
+from imblearn.over_sampling import SMOTE
+import numpy as np
+from scipy import sparse
+from sklearn.feature_selection import chi2
+from nltk import bigrams
 
 def feature_extraction(df, n_top_features):
     tfidf = TfidfVectorizer(sublinear_tf=True, norm='l2', encoding='latin-1', ngram_range=(1, 2))
-    features = tfidf.fit_transform(df.description).toarray()
+    features = tfidf.fit_transform(df.description.astype('U')).toarray()
     labels = df.label
     unique_labels = list(set(labels))
     feature_dic = {label: {'unigrams':[], 'bigrams':[]} for label in unique_labels}
